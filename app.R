@@ -2,7 +2,6 @@ library(shiny)
 library(readxl)
 library(nortest)
 library(qcc)
-library(rsconnect)
 
 # Função para validar e obter variáveis numéricas
 get_numeric_vars <- function(df, selected_vars) {
@@ -24,7 +23,10 @@ options(shiny.maxRequestSize = 200*1024^2)
 
 # Define UI
 ui <- fluidPage(
-  titlePanel(title = tagList(tags$img(src = "https://i.imgur.com/eoW5yzF.png", height = "70px"))),
+  titlePanel(
+    windowTitle = "QualyTools",
+    title = div(img(src = "logo.png", height = "70px"), "Quality Control Tools")
+    ),
   
   # Layout principal
   sidebarLayout(
