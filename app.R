@@ -216,30 +216,15 @@ server <- function(input, output, session) {
     )
   })
   
-  file_data <- reactiveVal(NULL)
-  initial_data <- reactiveVal(data.frame(
+  data_rv <- reactiveVal(data.frame(
     Month = c("Jan", "Feb", "Mar", "Apr", "May"),
-    Items_Produced = c(5000, 5500, 5200, 5100, 5400),
-    Defective_Items = c(120, 130, 110, 100, 125),
+    Items_Produced = as.character(c(5000, 5500, 5200, 5100, 5400)),
+    Defective_Items = as.character(c(120, 130, 110, 100, 125)),
     Defect_Type = c("Scratches", "Cracks", "Incorrect Size", "Scratches", "Cracks"),
-    Scratches = c(40, 20, 30, 40, 20),
-    Cracks = c(10, 30, 20, 10, 40),
-    Incorrect_Size = c(70, 80, 60, 50, 65)
+    Scratches = as.character(c(40, 20, 30, 40, 20)),
+    Cracks = as.character(c(10, 30, 20, 10, 40)),
+    Incorrect_Size = as.character(c(70, 80, 60, 50, 65))
   ))
-  
-  get_data <- reactive({
-    df <- if (!is.null(file_data())) {
-      file_data()
-    } else {
-      initial_data()
-    }
-    for (col in names(df)) {
-      if (startsWith(col, "NewColumn")) {
-        df[[col]] <- as.numeric(df[[col]])
-      }
-    }
-    df
-  })
   
   get_numeric_vars <- function(df, selected_vars, lang) {
     validate(need(!is.null(selected_vars), tr("No variables selected.", lang)))
@@ -362,39 +347,28 @@ server <- function(input, output, session) {
     )
   })
   
-  observeEvent(list(get_data(), input$selected_language), {
-    df <- get_data()
-    numeric_names <- names(df)[sapply(df, is.numeric)]
+  observeEvent(list(data_rv(), input$selected_language), {
+    df <- data_rv()
     updateSelectizeInput(session, "variables", choices = names(df), server = TRUE)
-    updateSelectizeInput(session, "scatter_x", choices = numeric_names, server = TRUE)
-    updateSelectizeInput(session, "scatter_y", choices = numeric_names, server = TRUE)
+    updateSelectizeInput(session, "scatter_x", choices = names(df), server = TRUE)
+    updateSelectizeInput(session, "scatter_y", choices = names(df), server = TRUE)
     updateSelectizeInput(session, "pareto_vars", choices = names(df), server = TRUE)
-    updateSelectizeInput(session, "control_variable", choices = numeric_names, server = TRUE)
-    updateSelectizeInput(session, "capability_variable", choices = numeric_names, server = TRUE)
+    updateSelectizeInput(session, "control_variable", choices = names(df), server = TRUE)
+    updateSelectizeInput(session, "capability_variable", choices = names(df), server = TRUE)
     updateSelectInput(session, "column_to_delete", choices = names(df))
     updateSelectInput(session, "column_to_rename", choices = names(df))
-  })
-  
-  observe({
-    df <- if (is.null(file_data())) {
-      initial_data()
-    } else {
-      file_data()
-    }
-    updateSelectInput(session, "column_to_rename", choices = names(df))
-    updateSelectInput(session, "column_to_delete", choices = names(df))
   })
   
   observeEvent(input$add_row, {
-    df <- initial_data()
+    df <- data_rv()
     new_row <- as.list(rep(NA, ncol(df)))
     names(new_row) <- names(df)
     df <- rbind(df, new_row)
-    initial_data(df)
+    data_rv(df)
   })
   
   observeEvent(input$add_col, {
-    df <- initial_data()
+    df <- data_rv()
     base_name <- "NewColumn"
     existing_names <- names(df)
     i <- 1
@@ -404,32 +378,33 @@ server <- function(input, output, session) {
       new_col_name <- paste0(base_name, i)
     }
     df[[new_col_name]] <- as.numeric(NA)
-    initial_data(df)
+    data_rv(df)
   })
   
   observeEvent(input$delete_row, {
     req(input$editable_table_rows_selected)
-    df <- initial_data()
+    df <- data_rv()
     row_to_delete <- input$editable_table_rows_selected
     df <- df[-row_to_delete, , drop = FALSE]
-    initial_data(df)
+    data_rv(df)
   })
   
   observeEvent(input$delete_col, {
     req(input$column_to_delete)
-    df <- initial_data()
+    df <- data_rv()
     col_to_delete <- input$column_to_delete
     df <- df[, !(names(df) %in% col_to_delete), drop = FALSE]
-    initial_data(df)
+    data_rv(df)
   })
   
   observeEvent(input$rename_col, {
     req(input$column_to_rename, input$new_col_name)
-    df <- initial_data()
+    df <- data_rv()
     names(df)[names(df) == input$column_to_rename] <- input$new_col_name
-    initial_data(df)
+    data_rv(df)
   })
   
+  #file upload 
   observe({
     req(input$file)
     file_ext <- tools::file_ext(input$file$name)
@@ -439,25 +414,25 @@ server <- function(input, output, session) {
                    "xlsx" = read_excel(input$file$datapath),
                    stop("Unsupported file format.")
       )
-      file_data(df)
+      data_rv(df)
     }, error = function(e) {
       showNotification("Error loading the file. Check the format and separator.", type = "error")
     })
   })
   
   output$isFileUploaded <- reactive({
-    return(!is.null(file_data()))
+    !is.null(data_rv()) && nrow(data_rv()) > 0
   })
   outputOptions(output, "isFileUploaded", suspendWhenHidden = FALSE)
   
   output$file_contents <- renderDT({
-    df <- get_data()
+    df <- data_rv()
     datatable(df, editable = TRUE)
   })
   
   output$editable_table <- renderDT({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     colnames(df) <- sapply(colnames(df), function(nm) tr(nm, lang))
     for (col in names(df)) {
       if (is.character(df[[col]])) {
@@ -483,13 +458,13 @@ server <- function(input, output, session) {
   
   observeEvent(input$editable_table_cell_edit, {
     info <- input$editable_table_cell_edit
-    df <- initial_data()
-    df[info$row, info$col] <- DT::coerceValue(info$value, as.numeric(df[[info$col]]))
-    initial_data(df)
+    df <- data_rv()
+    df[info$row, info$col] <- DT::coerceValue(info$value, df[info$row, info$col])
+    data_rv(df)
   })
   
   output$concat_summary <- renderPrint({
-    df <- get_data()
+    df <- data_rv()
     req(input$variables)
     selected_var <- input$variables
     summary(df[[selected_var]])
@@ -498,20 +473,26 @@ server <- function(input, output, session) {
   #generate histogram 
   output$histPlot <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$variables)
-    num_vars <- get_numeric_vars(df, input$variables, lang)
-    concatenated_values <- unlist(df[num_vars])
-    if(all(is.na(concatenated_values))) return()
-    xlim_values <- range(c(input$lic, input$ls, concatenated_values), na.rm = TRUE)
-    bins <- seq(min(concatenated_values, na.rm = TRUE), max(concatenated_values, na.rm = TRUE), length.out = input$Classes + 1)
-    hist_data <- hist(concatenated_values, breaks = bins, col = 'lightblue', border = 'grey',
+    # Always convert to numeric for plotting
+    vals <- suppressWarnings(as.numeric(df[[input$variables]]))
+    vals <- vals[!is.na(vals)]
+    if(length(vals) == 0) return()
+    {
+      plot.new()
+      text(0.5, 0.5, tr("No numeric data to display.", lang))
+      return()
+    }
+    xlim_values <- range(c(input$lic, input$ls, vals), na.rm = TRUE)
+    bins <- seq(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), length.out = input$Classes + 1)
+    hist_data <- hist(vals, breaks = bins, col = 'lightblue', border = 'grey',
                       xlab = tr("data_tab", lang), main = tr("hist_tab", lang),
                       ylab = tr("concat_summary", lang), freq = TRUE, xlim = xlim_values)
     if (input$include_normal) {
-      x <- seq(min(concatenated_values, na.rm = TRUE), max(concatenated_values, na.rm = TRUE), length.out = 100)
-      y <- dnorm(x, mean = mean(concatenated_values, na.rm = TRUE), sd = sd(concatenated_values, na.rm = TRUE))
-      y <- y * length(concatenated_values) * diff(hist_data$breaks)[1]
+      x <- seq(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), length.out = 100)
+      y <- dnorm(x, mean = mean(vals, na.rm = TRUE), sd = sd(vals, na.rm = TRUE))
+      y <- y * length(vals) * diff(hist_data$breaks)[1]
       lines(x, y, col = "black", lwd = 2)
     }
     if (input$include_tolerance) {
@@ -524,11 +505,11 @@ server <- function(input, output, session) {
   
   output$qqPlot <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$variables)
-    num_vars <- get_numeric_vars(df, input$variables, lang)
-    concatenated_values <- unlist(df[num_vars])
-    if(all(is.na(concatenated_values))) return()
+    vals <- suppressWarnings(as.numeric(df[[input$variables]]))
+    vals <- vals[!is.na(vals)]
+    if(length(vals) == 0) return()
     qqnorm(concatenated_values, main = paste("QQ Plot -", tr("hist_tab", lang)), pch = 19, col = "lightblue")
     qqline(concatenated_values, col = "red", lwd = 2)
   })
@@ -536,20 +517,32 @@ server <- function(input, output, session) {
   
   output$lillieforsTest <- renderPrint({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$variables)
-    num_vars <- get_numeric_vars(df, input$variables, lang)
-    concatenated_values <- unlist(df[num_vars])
-    lillie.test(concatenated_values)
+    vals <- suppressWarnings(as.numeric(df[[input$variables]]))
+    vals <- vals[!is.na(vals)]
+    if(length(vals) < 5) {
+      cat(tr("At least 5 numeric values are required for the Lilliefors test.", lang))
+      return()
+    }
+    lillie.test(vals)
   })
   
   output$shapirotest <- renderPrint({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$variables)
-    num_vars <- get_numeric_vars(df, input$variables, lang)
-    concatenated_values <- unlist(df[num_vars])
-    shapiro.test(concatenated_values)
+    vals <- suppressWarnings(as.numeric(df[[input$variables]]))
+    vals <- vals[!is.na(vals)]
+    if(length(vals) < 3) {
+      cat(tr("At least 3 numeric values are required for the Shapiro-Wilk test.", lang))
+      return()
+    }
+    if(length(vals) > 5000) {
+      cat(tr("Shapiro-Wilk test supports a maximum of 5000 values.", lang))
+      return()
+    }
+    shapiro.test(vals)
   })
   
   
@@ -557,39 +550,29 @@ server <- function(input, output, session) {
   
   output$scatterPlot <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$scatter_x, input$scatter_y)
-    x <- df[[input$scatter_x]]
-    y <- df[[input$scatter_y]]
-    validate(
-      need(is.numeric(x), "X must be numeric"),
-      need(is.numeric(y), "Y must be numeric"),
-      need(sum(!is.na(x)) > 0 && sum(!is.na(y)) > 0, "No numeric data to plot!")
-    )
-    plot(x, y,
+    x <- as.numeric(df[[input$scatter_x]])
+    y <- as.numeric(df[[input$scatter_y]])
+    valid <- !is.na(x) & !is.na(y)
+    if(sum(valid) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No valid numeric data for scatter plot.")
+      return()
+    }
+    plot(x[valid], y[valid],
          xlab = input$scatter_x, ylab = input$scatter_y,
          main = paste(tr("scatter_tab", lang), "-", input$scatter_x, "vs", input$scatter_y),
          pch = 19, col = "blue")
-    model <- lm(y ~ x)
+    model <- lm(y[valid] ~ x[valid])
     abline(model, col = "red", lwd = 2)
-  })
-  
-  output$spearmantest <- renderPrint({
-    lang <- get_lang()
-    df <- get_data()
-    req(df, input$scatter_x, input$scatter_y)
-    x <- df[[input$scatter_x]]
-    y <- df[[input$scatter_y]]
-    validate(need(is.numeric(x), tr("The selected X variable must be numeric.", lang)))
-    validate(need(is.numeric(y), tr("The selected Y variable must be numeric.", lang)))
-    cor.test(x, y, method = "spearman")
   })
   
   
   # Generate Pereto chart
   output$paretoPlot <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$pareto_vars)
     selected_var <- input$pareto_vars
     validate(need(selected_var %in% names(df), tr("The selected variable does not exist in the dataset.", lang)))
@@ -610,8 +593,8 @@ server <- function(input, output, session) {
   
   # functions to validate the data 
   validate_and_process <- function(data, variable_name, subgroup_size, lang) {
-    variable <- data[[variable_name]]
-    validate(need(is.numeric(variable), tr("The selected variable must be numeric", lang)))
+    variable <- suppressWarnings(as.numeric(data[[variable_name]]))
+    variable <- variable[!is.na(variable)]
     validate(need(length(variable) >= subgroup_size, tr("The amount of data must be greater than or equal to the size of the subgroup.", lang)))
     trimmed_variable <- head(variable, floor(length(variable) / subgroup_size) * subgroup_size)
     matrix(trimmed_variable, ncol = subgroup_size, byrow = TRUE)
@@ -644,33 +627,44 @@ server <- function(input, output, session) {
   #Generate S or R chart 
   output$control_chart <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$control_variable, input$subgroup_size, input$chart_type)
-    subgroups <- validate_and_process(df, input$control_variable, as.numeric(input$subgroup_size), lang)
+    subgroups <- tryCatch(
+      validate_and_process(df, input$control_variable, as.numeric(input$subgroup_size), lang),
+      error = function(e) NULL
+    )
+    if (is.null(subgroups) || nrow(subgroups) <= 1) {
+      plot.new()
+      text(0.5, 0.5, tr("Not enough valid numeric data for control chart.", lang))
+      return()
+    }
     qcc_control <- generate_control_chart(subgroups, input$chart_type)
     plot(qcc_control)
   })
   
   #Generate subgroup table 
   create_subgroups <- function(data, variable_name, subgroup_size, lang) {
-    variable <- data[[variable_name]]
-    if (!is.numeric(variable)) stop(tr("The selected variable must be numeric.", lang))
-    if (length(variable) < subgroup_size) stop(tr("The amount of data must be greater than or equal to the size of the subgroup.", lang))
+    variable <- suppressWarnings(as.numeric(data[[variable_name]]))
+    variable <- variable[!is.na(variable)]
+    if (length(variable) < subgroup_size) {
+      df_msg <- data.frame(Message = tr("Not enough numeric data in the selected column for the chosen subgroup size.", lang))
+      return(df_msg)
+    }
     trimmed_variable <- head(variable, floor(length(variable) / subgroup_size) * subgroup_size)
     subgroups <- matrix(trimmed_variable, ncol = subgroup_size, byrow = TRUE)
-    if (nrow(subgroups) <= 1) stop(tr("More than one subgroup is required to perform the analysis.", lang))
+    if (nrow(subgroups) <= 1) {
+      df_msg <- data.frame(Message = tr("More than one subgroup is required to perform the analysis.", lang))
+      return(df_msg)
+    }
     df_subgroups <- as.data.frame(subgroups)
-    
-    
     colnames(df_subgroups) <- paste0("observation ", seq_len(ncol(df_subgroups)))
     rownames(df_subgroups) <- paste0("group ", seq_len(nrow(df_subgroups)))
     return(df_subgroups)
   }
   output$control_subgroup_table <- DT::renderDT({
     req(input$control_variable, input$subgroup_size)
-    df <- get_data()
+    df <- data_rv()
     lang <- get_lang()
-    # Use your create_subgroups function so it returns the desired table
     subgroup_table <- create_subgroups(df, input$control_variable, as.numeric(input$subgroup_size), lang)
     DT::datatable(subgroup_table, options = list(dom = 't', paging = FALSE), rownames = TRUE)
   })
@@ -678,7 +672,7 @@ server <- function(input, output, session) {
   #capability ANalysis 
   output$capability_summary <- renderPrint({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$capability_variable, input$lie, input$les, input$subgroup_size_capability, input$target)
     if (input$lie >= input$les) stop(tr("The lower limit (LIE) must be less than the upper limit (LES).", lang))
     if (is.na(input$target)) stop(tr("Please, define the target value.", lang))
@@ -694,7 +688,7 @@ server <- function(input, output, session) {
       paste0("updated_data_", Sys.Date(), ".csv")
     },
     content = function(file) {
-      df <- get_data()
+      df <- data_rv()
       write.csv(df, file, row.names = FALSE, fileEncoding = "UTF-8")
     }
   )
