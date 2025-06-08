@@ -442,18 +442,14 @@ server <- function(input, output, session) {
     
     numeric_columns <- which(sapply(df, is.numeric)) - 1
     datatable(df, editable = TRUE, selection = "single", options = list(
-      pageLength = 5,
-      paging = FALSE,
-      searching = TRUE,
-      info = FALSE,
-      dom = 'ftip',
-      server = FALSE,
-      columnDefs = list(
-        list(className = 'dt-right', targets = numeric_columns)
-      ),
-      language = list(search = tr("search", lang))
-    )
-    )
+        paging = FALSE, 
+        lengthChange = FALSE,  
+        searching = TRUE,
+        info = FALSE,
+        dom = 'ft',
+        columnDefs = list(
+          list(className = 'dt-right', targets = numeric_columns)),
+      language = list(search = tr("search", lang))))
   })
   
   observeEvent(input$editable_table_cell_edit, {
@@ -478,8 +474,7 @@ server <- function(input, output, session) {
     # Always convert to numeric for plotting
     vals <- suppressWarnings(as.numeric(df[[input$variables]]))
     vals <- vals[!is.na(vals)]
-    if(length(vals) == 0) return()
-    {
+    if(length(vals) == 0) {
       plot.new()
       text(0.5, 0.5, tr("No numeric data to display.", lang))
       return()
@@ -510,8 +505,8 @@ server <- function(input, output, session) {
     vals <- suppressWarnings(as.numeric(df[[input$variables]]))
     vals <- vals[!is.na(vals)]
     if(length(vals) == 0) return()
-    qqnorm(concatenated_values, main = paste("QQ Plot -", tr("hist_tab", lang)), pch = 19, col = "lightblue")
-    qqline(concatenated_values, col = "red", lwd = 2)
+    qqnorm(vals, main = paste("QQ Plot -", tr("hist_tab", lang)), pch = 19, col = "lightblue")
+    qqline(vals, col = "red", lwd = 2)
   })
   
   
