@@ -255,7 +255,7 @@ server <- function(input, output, session) {
                    conditionalPanel(
                      condition = "input.tabs == 'histogram'",
                      selectizeInput("variables", tr("Select variables for histogram:", lang), choices = NULL, multiple = FALSE),
-                     sliderInput("Classes", tr("classes", lang), min = 1, max = 50, value = 12),
+                     numericInput("Classes", tr("classes", lang), min = 1, max = 50, value = 10),
                      numericInput("lic", tr("lic", lang), value = NULL),
                      numericInput("lsc", tr("lsc", lang), value = NULL),
                      numericInput("ls", tr("ls", lang), value = NULL),
@@ -325,7 +325,6 @@ server <- function(input, output, session) {
                                numericInput("target", tr("target", lang), value = NA, step = 0.01),
                                numericInput("les", tr("les", lang), value = NULL),
                                numericInput("subgroup_size_capability", tr("subgroup_size_capability", lang), value = 5, min = 2, step = 1),
-                               downloadButton("download_chart"," Download Capability"),
                                verbatimTextOutput("capability_summary")
                       ),
                       tabPanel(tr("license_tit", lang), value = "license",
@@ -433,25 +432,29 @@ server <- function(input, output, session) {
   output$editable_table <- renderDT({
     lang <- get_lang()
     df <- data_rv()
-    colnames(df) <- sapply(colnames(df), function(nm) tr(nm, lang))
-    for (col in names(df)) {
-      if (is.character(df[[col]])) {
-        df[[col]] <- sapply(df[[col]], function(val) tr(val, lang))
-      }
-    }
+    display_colnames <- sapply(colnames(df), function(nm) tr(nm, lang))
+    numeric_columns <- which(sapply(df, is.numeric)) - 1 # DT is zero-indexed
     
-    numeric_columns <- which(sapply(df, is.numeric)) - 1
-    datatable(df, editable = TRUE, selection = "single", options = list(
+    datatable(
+      df,
+      colnames = display_colnames,
+      editable = TRUE,
+      selection = "single",
+      options = list(
         paging = FALSE, 
         lengthChange = FALSE,  
         searching = TRUE,
         info = FALSE,
         dom = 'ft',
         columnDefs = list(
-          list(className = 'dt-right', targets = numeric_columns)),
-      language = list(search = tr("search", lang))))
+          list(className = 'dt-right', targets = numeric_columns)
+        ),
+        language = list(search = tr("search", lang))
+      )
+    )
   })
-  
+    
+    
   observeEvent(input$editable_table_cell_edit, {
     info <- input$editable_table_cell_edit
     df <- data_rv()
@@ -460,11 +463,14 @@ server <- function(input, output, session) {
   })
   
   output$concat_summary <- renderPrint({
-    df <- data_rv()
-    req(input$variables)
-    selected_var <- input$variables
-    summary(df[[selected_var]])
-  })
+  lang <- get_lang()
+  df <- data_rv()
+  req(input$variables)
+  selected_var <- input$variables
+  vals <- df[[selected_var]]
+  cat(tr("Total number of observations:", lang), length(vals), "\n\n")
+  print(summary(vals))
+})
   
   #generate histogram 
   output$histPlot <- renderPlot({
@@ -483,7 +489,7 @@ server <- function(input, output, session) {
     bins <- seq(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), length.out = input$Classes + 1)
     hist_data <- hist(vals, breaks = bins, col = 'lightblue', border = 'grey',
                       xlab = tr("data_tab", lang), main = tr("hist_tab", lang),
-                      ylab = tr("concat_summary", lang), freq = TRUE, xlim = xlim_values)
+                      ylab = tr("Frequency", lang), freq = TRUE, xlim = xlim_values)
     if (input$include_normal) {
       x <- seq(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), length.out = 100)
       y <- dnorm(x, mean = mean(vals, na.rm = TRUE), sd = sd(vals, na.rm = TRUE))
@@ -547,8 +553,8 @@ server <- function(input, output, session) {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$scatter_x, input$scatter_y)
-    x <- as.numeric(df[[input$scatter_x]])
-    y <- as.numeric(df[[input$scatter_y]])
+    x <- suppressWarnings(as.numeric(df[[input$scatter_x]]))
+    y <- suppressWarnings(as.numeric(df[[input$scatter_y]]))
     valid <- !is.na(x) & !is.na(y)
     if(sum(valid) == 0) {
       plot.new()
@@ -564,20 +570,23 @@ server <- function(input, output, session) {
   })
   
   
-  # Generate Pereto chart
+  # Generate Pareto chart
   output$paretoPlot <- renderPlot({
     lang <- get_lang()
     df <- data_rv()
     req(df, input$pareto_vars)
     selected_var <- input$pareto_vars
     validate(need(selected_var %in% names(df), tr("The selected variable does not exist in the dataset.", lang)))
+    vals <- df[[selected_var]]
+    vals <- vals[!is.na(vals) & vals != ""]
     freq_table <- table(df[[selected_var]])
     freq_table <- freq_table[order(freq_table, decreasing = TRUE)]
     cum_freq <- cumsum(freq_table)
     y1 <- c(0, max(cum_freq) * 1.04)
     y2 <- c(0, 104)
-    oldpar <- par(mar = c(5, 4, 4, 4) + 0.1)
-    bp <- barplot(freq_table, ylim = y1, ylab = tr("concat_summary", lang), col = "steelblue", las = 2, cex.names = 0.8)
+    oldpar <- par(mar = c(10, 4, 4, 4) + 0.1)
+    bp <- barplot(freq_table, ylim = y1, ylab = tr("concat_summary", lang), col = "steelblue", las = 2, cex.names = 0.8
+                  )
     points(bp[, 1], cum_freq, type = "b", col = "red", lwd = 2, pch = 19)
     y2lab <- pretty(c(0, 100))
     y2at <- y2lab / 100 * max(cum_freq)
@@ -586,9 +595,10 @@ server <- function(input, output, session) {
     par(oldpar)
   })
   
-  # functions to validate the data 
   validate_and_process <- function(data, variable_name, subgroup_size, lang) {
-    variable <- suppressWarnings(as.numeric(data[[variable_name]]))
+    variable <- data[[variable_name]]
+    if (is.factor(variable)) variable <- as.character(variable)
+    variable <- suppressWarnings(as.numeric(variable))
     variable <- variable[!is.na(variable)]
     validate(need(length(variable) >= subgroup_size, tr("The amount of data must be greater than or equal to the size of the subgroup.", lang)))
     trimmed_variable <- head(variable, floor(length(variable) / subgroup_size) * subgroup_size)
@@ -610,9 +620,9 @@ server <- function(input, output, session) {
   }
   
   # Generate X-bar chart 
-  output$x_bar <- renderPlot({
+  output$xbar_chart <- renderPlot({
     lang <- get_lang()
-    df <- get_data()
+    df <- data_rv()
     req(df, input$control_variable, input$subgroup_size)
     subgroups <- validate_and_process(df, input$control_variable, as.numeric(input$subgroup_size), lang)
     qcc_xbar <- generate_control_chart(subgroups, "xbar")
