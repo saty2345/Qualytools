@@ -216,16 +216,15 @@ server <- function(input, output, session) {
     )
   })
   
-  data_rv <- reactiveVal(data.frame(
-    Month = c("Jan", "Feb", "Mar", "Apr", "May"),
-    Items_Produced = as.character(c(5000, 5500, 5200, 5100, 5400)),
-    Defective_Items = as.character(c(120, 130, 110, 100, 125)),
-    Defect_Type = c("Scratches", "Cracks", "Incorrect Size", "Scratches", "Cracks"),
-    Scratches = as.character(c(40, 20, 30, 40, 20)),
-    Cracks = as.character(c(10, 30, 20, 10, 40)),
-    Incorrect_Size = as.character(c(70, 80, 60, 50, 65))
-  ))
-  
+  data_rv <- reactiveVal(
+    data.frame(
+      Month = character(),
+      Items_Produced = character(),
+      Defective_Items = character(),
+      stringsAsFactors = FALSE
+    )
+  )
+    
   get_numeric_vars <- function(df, selected_vars, lang) {
     validate(need(!is.null(selected_vars), tr("No variables selected.", lang)))
     validate(need(all(selected_vars %in% names(df)), tr("Selected variables do not exist in the dataset.", lang)))
@@ -281,7 +280,7 @@ server <- function(input, output, session) {
         mainPanel(
           tabsetPanel(id = "tabs", selected = "data",
                       tabPanel(tr("data_tab", lang), value = "data",
-                               conditionalPanel(condition = "output.isFileUploaded",
+                               conditionalPanel(condition = "output.isFileUploaded == true",
                                                 DTOutput("file_contents")
                                ),
                                conditionalPanel(
@@ -358,6 +357,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "column_to_rename", choices = names(df))
   })
   
+  #add row
   observeEvent(input$add_row, {
     df <- data_rv()
     new_row <- as.list(rep(NA, ncol(df)))
@@ -366,6 +366,7 @@ server <- function(input, output, session) {
     data_rv(df)
   })
   
+  #add column 
   observeEvent(input$add_col, {
     df <- data_rv()
     base_name <- "NewColumn"
@@ -376,10 +377,11 @@ server <- function(input, output, session) {
       i <- i + 1
       new_col_name <- paste0(base_name, i)
     }
-    df[[new_col_name]] <- as.numeric(NA)
+    df[[new_col_name]] <- as.character(NA)
     data_rv(df)
   })
   
+  # delete row 
   observeEvent(input$delete_row, {
     req(input$editable_table_rows_selected)
     df <- data_rv()
@@ -388,6 +390,7 @@ server <- function(input, output, session) {
     data_rv(df)
   })
   
+  # delete column 
   observeEvent(input$delete_col, {
     req(input$column_to_delete)
     df <- data_rv()
@@ -396,6 +399,7 @@ server <- function(input, output, session) {
     data_rv(df)
   })
   
+# rename column  
   observeEvent(input$rename_col, {
     req(input$column_to_rename, input$new_col_name)
     df <- data_rv()
@@ -413,6 +417,14 @@ server <- function(input, output, session) {
                    "xlsx" = read_excel(input$file$datapath),
                    stop("Unsupported file format.")
       )
+      # Auto-convert columns that are all or mostly numeric
+      df[] <- lapply(df, function(col) {
+        if (all(grepl("^\\s*-?\\d*\\.?\\d*\\s*$", as.character(col))) && any(!is.na(as.numeric(as.character(col))))) {
+          as.numeric(as.character(col))
+        } else {
+          col
+        }
+      })
       data_rv(df)
     }, error = function(e) {
       showNotification("Error loading the file. Check the format and separator.", type = "error")
@@ -426,39 +438,47 @@ server <- function(input, output, session) {
   
   output$file_contents <- renderDT({
     df <- data_rv()
-    datatable(df, editable = TRUE)
+    if (is.null(df) || !is.data.frame(df) || ncol(df) == 0) {
+      datatable(data.frame("No data" = character(0)), editable = TRUE)
+    } else {
+      datatable(df, editable = TRUE, options = list(ordering = FALSE))
+    }
   })
   
   output$editable_table <- renderDT({
-    lang <- get_lang()
     df <- data_rv()
-    display_colnames <- sapply(colnames(df), function(nm) tr(nm, lang))
-    numeric_columns <- which(sapply(df, is.numeric)) - 1 # DT is zero-indexed
-    
-    datatable(
-      df,
-      colnames = display_colnames,
-      editable = TRUE,
-      selection = "single",
-      options = list(
-        paging = FALSE, 
-        lengthChange = FALSE,  
-        searching = TRUE,
-        info = FALSE,
-        dom = 'ft',
-        columnDefs = list(
-          list(className = 'dt-right', targets = numeric_columns)
-        ),
-        language = list(search = tr("search", lang))
-      )
-    )
+    if (is.null(df) || !is.data.frame(df) || ncol(df) == 0) {
+      # Show an empty data frame with a message or placeholder columns
+      datatable(data.frame("No data" = character(0)), editable = TRUE)
+    } else {
+      datatable(df, editable = TRUE, options = list(ordering = FALSE))
+    }
   })
-    
     
   observeEvent(input$editable_table_cell_edit, {
     info <- input$editable_table_cell_edit
     df <- data_rv()
-    df[info$row, info$col] <- DT::coerceValue(info$value, df[info$row, info$col])
+    colname <- names(df)[info$col]
+    old_col <- df[[colname]]
+    df[info$row, info$col] <- info$value
+    # If column was numeric, coerce it back to numeric
+    if (is.numeric(old_col)) {
+      suppressWarnings(df[[colname]] <- as.numeric(df[[colname]]))
+    }
+    data_rv(df)
+  })
+ 
+   #SAVE EDITS IN DT
+  observeEvent(input$file_contents_cell_edit, {
+    info <- input$file_contents_cell_edit
+    df <- data_rv()
+    colname <- names(df)[info$col]
+    old_col <- df[[colname]]
+    df[info$row, info$col] <- info$value
+    # If column was numeric, coerce it back to numeric
+    if (is.numeric(old_col)) {
+      suppressWarnings(df[[colname]] <- as.numeric(df[[colname]]))
+    }
     data_rv(df)
   })
   
