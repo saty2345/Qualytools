@@ -290,7 +290,9 @@ server <- function(input, output, session) {
                       ),
                       tabPanel(tr("hist_tab", lang), value = "histogram",
                                verbatimTextOutput("concat_summary"),
+                               downloadButton("download_hist", "Download Histogram"),
                                plotOutput("histPlot"),
+                               downloadButton("download_qq", "Download QQ Plot"),
                                plotOutput("qqPlot"),
                                verbatimTextOutput("lillieforsTest"),
                                verbatimTextOutput("shapirotest")
@@ -298,11 +300,13 @@ server <- function(input, output, session) {
                       tabPanel(tr("scatter_tab", lang), value = "scatter",
                                selectizeInput("scatter_x", tr("scatter_x", lang), choices = NULL),
                                selectizeInput("scatter_y", tr("scatter_y", lang), choices = NULL),
+                               downloadButton("download_scatter", "Download Scatter Plot"),
                                plotOutput("scatterPlot"),
                                verbatimTextOutput("spearmantest")
                       ),
                       tabPanel(tr("pareto_tab", lang), value = "pareto",
                                selectizeInput("pareto_vars", tr("pareto_vars", lang), choices = NULL),
+                               downloadButton("download_pareto", "Download Pareto Chart"),
                                plotOutput("paretoPlot")
                       ),
                       tabPanel(tr("control_tab", lang), value = "control",
@@ -315,7 +319,9 @@ server <- function(input, output, session) {
                                               selected = "S"),
                                DTOutput("control_subgroup_table"),
                                br(),
+                               downloadButton("download_xbar", "Download X-bar Chart"),
                                plotOutput("xbar_chart"),
+                               downloadButton("download_control", "Download Control Chart"),
                                plotOutput("control_chart")
                       ),
                       tabPanel(tr("capability_tab", lang), value = "capability",
@@ -493,7 +499,7 @@ server <- function(input, output, session) {
 })
   
   #generate histogram 
-  output$histPlot <- renderPlot({
+  plot_hist <- function(df, input, lang) {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$variables)
@@ -521,10 +527,28 @@ server <- function(input, output, session) {
       if (!is.null(input$lsc)) abline(v = input$lsc, col = "green", lwd = 2, lty = 2)
       if (!is.null(input$ls)) abline(v = input$ls, col = "red", lwd = 2, lty = 4)
     }
-  })
+  }
   
+  #download histogram 
+output$histPlot <- renderPlot({
+  lang <- get_lang()
+  df <- data_rv()
+  req(df, input$variables)
+  plot_hist(df, input, lang)
+})
+output$download_hist <- downloadHandler(
+    filename = function() paste0("histogram_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_hist(df, input, lang)
+      dev.off()
+    }
+  )
   
-  output$qqPlot <- renderPlot({
+  #generate qq plot 
+plot_qq <- function(df, input, lang) {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$variables)
@@ -533,7 +557,23 @@ server <- function(input, output, session) {
     if(length(vals) == 0) return()
     qqnorm(vals, main = paste("QQ Plot -", tr("hist_tab", lang)), pch = 19, col = "lightblue")
     qqline(vals, col = "red", lwd = 2)
-  })
+  }
+  
+  #download qq plot 
+output$qqPlot <- renderPlot({
+  df <- data_rv()
+  plot_qq(df, input, get_lang())
+})
+output$download_qq <- downloadHandler(
+    filename = function() paste0("qqplot_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_qq(df, input$variables, lang)
+      dev.off()
+    }
+  )
   
   
   output$lillieforsTest <- renderPrint({
@@ -568,8 +608,7 @@ server <- function(input, output, session) {
   
   
   # generate scatterplot 
-  
-  output$scatterPlot <- renderPlot({
+  plot_scatter <- function(df, input, lang) {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$scatter_x, input$scatter_y)
@@ -587,11 +626,26 @@ server <- function(input, output, session) {
          pch = 19, col = "blue")
     model <- lm(y[valid] ~ x[valid])
     abline(model, col = "red", lwd = 2)
-  })
+  }
   
+  # download scatterplot 
+  output$scatterPlot <- renderPlot({
+    df <- data_rv()
+    plot_scatter(df, input, get_lang())
+  })
+  output$download_scatter <- downloadHandler(
+    filename = function() paste0("scatterplot_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_scatter(df, input, lang)
+      dev.off()
+    }
+  )
   
   # Generate Pareto chart
-  output$paretoPlot <- renderPlot({
+  plot_pareto <- function(df, input, lang) {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$pareto_vars)
@@ -613,7 +667,23 @@ server <- function(input, output, session) {
     axis(4, at = y2at, labels = paste0(y2lab, "%"))
     mtext("Cumulative Percentage (%)", side = 4, line = 3)
     par(oldpar)
+  }
+  
+  #download pareto 
+  output$paretoPlot <- renderPlot({
+    df <- data_rv()
+    plot_pareto(df, input, get_lang())
   })
+  output$download_pareto <- downloadHandler(
+    filename = function() paste0("pareto_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_pareto(df, input$pareto_vars, lang)
+      dev.off()
+    }
+  )
   
   validate_and_process <- function(data, variable_name, subgroup_size, lang) {
     variable <- data[[variable_name]]
@@ -640,15 +710,31 @@ server <- function(input, output, session) {
   }
   
   # Generate X-bar chart 
-  output$xbar_chart <- renderPlot({
+  plot_control_chart <- function(df, input, lang, type = "xbar") {
     lang <- get_lang()
     df <- data_rv()
     req(df, input$control_variable, input$subgroup_size)
     subgroups <- validate_and_process(df, input$control_variable, as.numeric(input$subgroup_size), lang)
     qcc_xbar <- generate_control_chart(subgroups, "xbar")
     plot(qcc_xbar)
+  }
+  #download x-bar
+  output$xbar_chart <- renderPlot({
+    lang <- get_lang()
+    df <- data_rv()
+    req(df, input$control_variable, input$subgroup_size)
+    plot_control_chart(df, input, lang, type = "xbar")
   })
-  
+  output$download_xbar <- downloadHandler(
+    filename = function() paste0("xbar_chart_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_control_chart(df, input, lang, type = "xbar")
+      dev.off()
+    }
+  )
   #Generate S or R chart 
   output$control_chart <- renderPlot({
     lang <- get_lang()
@@ -667,6 +753,28 @@ server <- function(input, output, session) {
     plot(qcc_control)
   })
   
+  #download s chart 
+  output$download_s_chart <- downloadHandler(
+    filename = function() paste0("s_chart_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_control_chart(df, input, lang, type = "S")
+      dev.off()
+    }
+  )
+  # download r chart
+  output$download_r_chart <- downloadHandler(
+    filename = function() paste0("r_chart_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_control_chart(df, input, lang, type = "R")
+      dev.off()
+    }
+  )
   #Generate subgroup table 
   create_subgroups <- function(data, variable_name, subgroup_size, lang) {
     variable <- suppressWarnings(as.numeric(data[[variable_name]]))
@@ -693,6 +801,16 @@ server <- function(input, output, session) {
     subgroup_table <- create_subgroups(df, input$control_variable, as.numeric(input$subgroup_size), lang)
     DT::datatable(subgroup_table, options = list(dom = 't', paging = FALSE), rownames = TRUE)
   })
+  output$download_control <- downloadHandler(
+    filename = function() paste0("control_chart_", Sys.Date(), ".png"),
+    content = function(file) {
+      lang <- get_lang()
+      df <- data_rv()
+      png(file, width = 7, height = 5, units = "in", res = 300)
+      plot_control_chart(df, input, lang, type = input$chart_type)
+      dev.off()
+    }
+  )
   
   #capability ANalysis 
   output$capability_summary <- renderPrint({
