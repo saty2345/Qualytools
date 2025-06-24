@@ -330,7 +330,8 @@ server <- function(input, output, session) {
                                numericInput("target", tr("target", lang), value = NA, step = 0.01),
                                numericInput("les", tr("les", lang), value = NULL),
                                numericInput("subgroup_size_capability", tr("subgroup_size_capability", lang), value = 5, min = 2, step = 1),
-                               verbatimTextOutput("capability_summary")
+                               verbatimTextOutput("capability_summary"),
+                               downloadButton("download_capability_plot", "Download Capability Plot")
                       ),
                       tabPanel(tr("license_tit", lang), value = "license",
                                h3(tr("license_title", lang)),
@@ -680,7 +681,7 @@ output$download_qq <- downloadHandler(
       lang <- get_lang()
       df <- data_rv()
       png(file, width = 7, height = 5, units = "in", res = 300)
-      plot_pareto(df, input$pareto_vars, lang)
+      plot_pareto(df, input, lang)
       dev.off()
     }
   )
