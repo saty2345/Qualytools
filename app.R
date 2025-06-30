@@ -4,6 +4,7 @@ library(readxl)
 library(nortest)
 library(qcc)
 library(DT)
+library(rsconnect)
 
 # Translation Table as List 
 translations <- list(
