@@ -218,9 +218,9 @@ server <- function(input, output, session) {
   
   data_rv <- reactiveVal(
     data.frame(
-      Month = character(),
-      Items_Produced = character(),
-      Defective_Items = character(),
+      X1 = character(),
+      X2 = character(),
+      X3 = character(),
       stringsAsFactors = FALSE
     )
   )
